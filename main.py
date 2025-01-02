@@ -25,13 +25,13 @@ def show_statistics():
 
 
 @app.command()
-def print_balance_chart():
+def statistics():
     journal.plot_statistics()
 
 
 @app.command()
 def trade_history():
-    trades = journal.trade_history()
+    trades = journal.get_trade_history()
     if trades.empty:
         console.print("[bold red]No trades found.[/bold red]")
         return
@@ -50,7 +50,7 @@ def trade_history():
 @app.command()
 def run():
     console.print("[bold magenta]Welcome to CLI app[/bold magenta]")
-    console.print("""[bold cyan]Available commands: 'add-trade', 'trade-history' 'balance-chart', 'help', 'exit'[/bold cyan]""")
+    console.print("""[bold cyan]Available commands: 'add-trade', 'trade-history' 'statistics', 'help', 'exit'[/bold cyan]""")
 
     while True:
         try:
@@ -60,8 +60,8 @@ def run():
                 add_trade()
             elif command == "trade-history":
                 trade_history()
-            elif command == "balance-chart":
-                print_balance_chart()
+            elif command == "statistics":
+                statistics()
             elif command == "help":
                 help()
             elif command in ("exit", "quit"):

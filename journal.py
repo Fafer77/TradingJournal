@@ -74,8 +74,12 @@ class Journal:
         self._record_statistics_history(new_balance)
 
 
-    def trade_history(self):
+    def get_trade_history(self):
         return self.trades
+
+
+    def statistics(self):
+        self.plot_statistics()
 
 
     def plot_statistics(self):
@@ -85,8 +89,17 @@ class Journal:
             print('No balance history to plot')
             return
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(balance_history['timestamp'], balance_history['balance'], marker='o', linestyle='-')
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+
+        ax1.plot(balance_history['timestamp'], balance_history['balance'], marker='o', linestyle='-')
+        ax1.legend()
+        ax1.set_title('Balance History')
+        ax1.set_xlabel('Date')
+        ax1.set_ylabel('Balance')
+
+        print(self.trade_against_plan, self.trade_with_plan)
+        ax2.bar(['with plan', 'against plan'], [self.trade_with_plan, self.trade_against_plan])
+        
         plt.tight_layout()
         plt.show()
 
@@ -123,8 +136,12 @@ class Journal:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS statistics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT UNIQUE,
                 balance REAL,
-                timestamp TEXT DEFAULT (datetime('now', 'localtime'))
+                trade_with_plan INTEGER,
+                trade_against_plan INTEGER,
+                profit REAL
+                commission REAL
             )
         """)
 
@@ -208,6 +225,48 @@ class Journal:
             return statistics_history
         except pd.io.sql.DatabaseError:
             return pd.DataFrame(columns=['timestamp', 'balance'])
+
+
+    # it is used to aggregate statistics to daily period
+    def update_daily_statistics(self, trade_date, profit, commission, 
+                                with_plan):
+        self.cursor.execute("SELECT * FROM statistics WHERE date = ?", (trade_date,))
+        row = self.cursor.fetchone()
+
+        trade_date = datetime.strptime(trade_date, "%Y-%m-%d").strftime("%Y-%m-%d")
+        trade_with_plan = 1 if with_plan == 'yes' else 0
+        trade_against_plan = 1 if with_plan == 'no' else 0
+
+        if row:
+            new_balance = row[2] + profit - commission
+            new_profit = row[5] + profit
+            new_trade_with_plan = row[3] + trade_with_plan
+            new_trade_against_plan = row[4] + trade_against_plan
+            new_commission = row[6] + commission
+            self.cursor.execute("""
+                UPDATE statistics SET balance = ?, trade_with_plan = ?, trade_against_plan = ?, profit = ?, commission = ?
+                WHERE date = ?
+            """, (new_balance, new_trade_with_plan, new_trade_against_plan, new_profit, new_commission, trade_date))
+        else:
+            previous_balance = self._get_previous_balance(trade_date)
+            new_balance = previous_balance + profit - commission
+            self.cursor.execute("""
+                INSERT INTO statistics (date, balance, trade_with_plan,
+                trade_against_plan, profit, commission)
+                VALUES (?, ?, ?, ? ,?, ?)
+                """, (trade_date, new_balance, trade_with_plan, 
+                trade_against_plan, profit, commission))
+
+        self.conn.commit()
+
+
+    # helper function to get previous day balance
+    def _get_previous_balance(self, trade_date):
+        self.cursor.execute("""SELECT balance FROM statistics 
+        WHERE date < ? ORDER BY date DESC LIMIT 1
+        """, (trade_date,))
+        row = self.cursor.fetchone()
+        return row[0] if row else 0
 
 
     def __del__(self):
